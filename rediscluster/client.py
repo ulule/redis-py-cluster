@@ -131,7 +131,7 @@ class StrictRedisCluster(StrictRedis):
 
     def __init__(self, host=None, port=None, startup_nodes=None, max_connections=None, max_connections_per_node=False, init_slot_cache=True,
                  readonly_mode=False, reinitialize_steps=None, skip_full_coverage_check=False, nodemanager_follow_cluster=False,
-                 connection_class=None, **kwargs):
+                 connection_class=None, retry_connection_error=True, **kwargs):
         """
         :startup_nodes:
             List of nodes that initial bootstrapping can be done from
@@ -150,6 +150,11 @@ class StrictRedisCluster(StrictRedis):
             The node manager will during initialization try the last set of nodes that
             it was operating on. This will allow the client to drift along side the cluster
             if the cluster nodes move around alot.
+        :retry_connection_error:
+            The default behaviour on ConnectionError and TimeoutError is to retry the request
+            as many times as the RedisClusterRequestTTL value (or success, whichever comes first).
+            After half the max number of retries, a delay of 100ms is introduced between each subsequent retries.
+            Set to False if you want to raise immediately on ConnectionError and TimeoutError (no retry, no wait).
         :**kwargs:
             Extra arguments that will be sent into StrictRedis instance when created
             (See Official redis-py doc for supported kwargs
@@ -193,6 +198,7 @@ class StrictRedisCluster(StrictRedis):
         super(StrictRedisCluster, self).__init__(connection_pool=pool, **kwargs)
 
         self.refresh_table_asap = False
+        self.retry_connection_error = retry_connection_error
         self.nodes_flags = self.__class__.NODES_FLAGS.copy()
         self.result_callbacks = self.__class__.RESULT_CALLBACKS.copy()
         self.response_callbacks = self.__class__.RESPONSE_CALLBACKS.copy()
@@ -371,7 +377,11 @@ class StrictRedisCluster(StrictRedis):
                 return self.parse_response(r, command, **kwargs)
             except (RedisClusterException, BusyLoadingError):
                 raise
-            except (ConnectionError, TimeoutError):
+            except (ConnectionError, TimeoutError) as e:
+                if not self.retry_connection_error:
+                    e.args += ('Not retrying, setup to raise immediately.',)
+                    raise e
+
                 try_random_node = True
 
                 if ttl < self.RedisClusterRequestTTL / 2:
