@@ -24,11 +24,12 @@ class StrictClusterPipeline(StrictRedisCluster):
     """
 
     def __init__(self, connection_pool, result_callbacks=None,
-                 response_callbacks=None, startup_nodes=None):
+                 response_callbacks=None, startup_nodes=None, retry_connection_error=True):
         """
         """
         self.command_stack = []
         self.refresh_table_asap = False
+        self.retry_connection_error = retry_connection_error
         self.connection_pool = connection_pool
         self.result_callbacks = result_callbacks or self.__class__.RESULT_CALLBACKS.copy()
         self.startup_nodes = startup_nodes if startup_nodes else []
